@@ -10,14 +10,15 @@ set -eu -o pipefail
 ddev_versions="v1.24.1 HEAD" # Space-separated list of ddev versions
 ddev_versions="HEAD"
 database_versions="mariadb:10.11 mysql:8.0 mysql:8.4"
+database_versions="mysql:8.0 mysql:8.4"
 import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
 import_files="$HOME/tmp/db.sql.gz"
 ddev_binary_path="/usr/local/bin/ddev" # Path to place the ddev binary
 basedir=$PWD
 
 # Results file
-results_file="import_times_report.csv"
-echo "ddev_version,import_file,elapsed_time" > "$results_file"
+results_file="${basedir}/import_times_report.csv"
+echo "ddev_version,database_version,import_file,import_file_size,elapsed_time" > "$results_file"
 
 # Function to download and install ddev for a specific version
 install_ddev() {
@@ -27,11 +28,9 @@ install_ddev() {
     curl -fsSL https://raw.githubusercontent.com/ddev/ddev/refs/heads/master/scripts/install_ddev_head.sh | bash
     head_version=$($ddev_binary_path version | grep "DDEV version" | awk '{print $3}')
     echo "Installed HEAD version: $head_version"
-    echo "$head_version"
   else
     #echo "Installing ddev version $version..."
     curl -fsSL https://raw.githubusercontent.com/ddev/ddev/master/scripts/install_ddev.sh | bash -s -- "$version"
-    echo "$version"
   fi
 }
 
@@ -65,7 +64,7 @@ for ddev_version in $ddev_versions; do
       elapsed_time=$((end_time - start_time))
 
       # Record the result
-      echo "$installed_version,$import_file,$elapsed_time" >> "${basedir}/results_file"
+      echo "$(ddev --version | awk '{print $3}'),$database_version,$import_file,$(ls -l $import_file | awk '{print $5}'), $elapsed_time" >> "$results_file"
       ddev delete -Oy && ddev poweroff
     done
   done
