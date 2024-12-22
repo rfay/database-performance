@@ -8,9 +8,9 @@ set -eu -o pipefail
 
 # Configuration variables
 ddev_versions="v1.24.1 HEAD" # Space-separated list of ddev versions
-ddev_versions="HEAD"
+#ddev_versions="HEAD"
 database_versions="mariadb:10.11 mysql:8.0 mysql:8.4"
-database_versions="mysql:8.0 mysql:8.4"
+#database_versions="mysql:8.0 mysql:8.4"
 import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
 import_files="$HOME/tmp/db.sql.gz"
 ddev_binary_path="/usr/local/bin/ddev" # Path to place the ddev binary
