@@ -12,7 +12,7 @@ ddev_versions="v1.24.1 HEAD" # Space-separated list of ddev versions
 database_versions="mariadb:10.11 mysql:8.0 mysql:8.4"
 #database_versions="mysql:8.0 mysql:8.4"
 import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
-import_files="$HOME/tmp/db.sql.gz"
+import_files="$HOME/workspace/database-performance/tarballs/db.sql.gz $HOME/tmp/100k.sql.gz"
 ddev_binary_path="/usr/local/bin/ddev" # Path to place the ddev binary
 basedir=$PWD
 
@@ -42,8 +42,6 @@ for ddev_version in $ddev_versions; do
 #  fi
   rm -f ${ddev_binary_path}
 
-  installed_version=$(install_ddev "$ddev_version")
-
   for database_version in $database_versions; do
     for import_file in $import_files; do
       ddev poweroff
@@ -52,7 +50,9 @@ for ddev_version in $ddev_versions; do
       tmpdir=$HOME/tmp/compare-imports/${tmpdesc}
       mkdir -p ${tmpdir}
 #      echo "tmpdir=$tmpdir"
-      cd ${tmpdir} && (ddev delete -Oy || true) && rm -rf .ddev && ddev config --database=$database_version && ddev start -y
+      cd ${tmpdir} && (ddev delete -Oy || true) && rm -rf .ddev
+      ddev config --database=$database_version || continue # if db type is not supported
+      ddev start -y
       echo "Importing $import_file using ddev version $(ddev --version) database $database_version"
 
       # Measure the time taken for the import
