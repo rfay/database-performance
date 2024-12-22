@@ -51,7 +51,7 @@ for ddev_version in $ddev_versions; do
       mkdir -p ${tmpdir}
 #      echo "tmpdir=$tmpdir"
       cd ${tmpdir} && (ddev delete -Oy || true) && rm -rf .ddev
-      ddev config --database=$database_version --name="${database_version//:/}"|| continue # if db type is not supported
+      ddev config --database=$database_version --project-name="${database_version//:/}"|| continue # if db type is not supported
       ddev start -y
       echo "Importing $import_file using ddev version $(ddev --version) database $database_version"
 
