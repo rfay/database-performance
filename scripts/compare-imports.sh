@@ -69,6 +69,18 @@ for ddev_version in $ddev_versions; do
 
       # Record the result
       echo "$(ddev --version | awk '{print $3}'),$database_version,$import_file,$(ls -l $import_file | awk '{print $5}'), $elapsed_time" >> "$results_file"
+      ddev mysql -e "SELECT COUNT(*) FROM node; SELECT COUNT(*) FROM USERS;"
+      ddev mysql -e '
+        SELECT
+            table_schema AS database_name,
+            ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS total_size_in_mb
+        FROM
+            information_schema.tables
+        GROUP BY
+            table_schema
+        ORDER BY
+            total_size_in_mb DESC;
+      '
       ddev delete -Oy && ddev poweroff
     done
   done
