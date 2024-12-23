@@ -8,18 +8,18 @@ set -eu -o pipefail
 
 # Configuration variables
 ddev_versions="v1.24.1 HEAD" # Space-separated list of ddev versions
-#ddev_versions="HEAD"
-database_versions="mariadb:10.11 mysql:8.0"
+database_versions="mysql:8.0"
 #database_versions="mysql:8.0 mysql:8.4"
 import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
 #import_files="$HOME/workspace/database-performance/tarballs/d11.sql.gz $HOME/tmp/100k.sql.gz"
 #import_files="$HOME/workspace/database-performance/tarballs/d11.sql.gz"
 
 ddev_binary_path="/usr/local/bin/ddev" # Path to place the ddev binary
+docker_platform="$(ddev version -j | jq -r '.raw[\"docker-platform\"]')"
 basedir=$PWD
 
 # Results file
-results_file="${basedir}/import_times_report.$(date +'%Y%m%d%H%M%S').csv"
+results_file="${basedir}/import_times_report.${docker_platform}.$(date +'%Y%m%d%H%M%S').csv"
 echo "ddev_version,database_version,import_file,import_file_size,elapsed_time" > "$results_file"
 
 # Function to download and install ddev for a specific version

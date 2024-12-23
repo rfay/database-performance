@@ -6,9 +6,9 @@
 # This can be run multiple times, or have the variables changed to create more items.
 
 # Variables
-NUM_USERS=10000
-NUM_NODES=100000
-NUM_COMMENTED_NODES=100
+NUM_USERS=100000
+NUM_NODES=1000000
+NUM_COMMENTED_NODES=1000000
 BUNDLES="case_study,page"
 DB_EXPORT_PATH=".tarballs/gen.sql.gz"
 
