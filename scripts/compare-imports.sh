@@ -13,11 +13,13 @@ database_versions="mariadb:10.11 mysql:8.0"
 #database_versions="mysql:8.0 mysql:8.4"
 import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
 import_files="$HOME/workspace/database-performance/tarballs/d11.sql.gz $HOME/tmp/100k.sql.gz"
+import_files="$HOME/workspace/database-performance/tarballs/d11.sql.gz"
+
 ddev_binary_path="/usr/local/bin/ddev" # Path to place the ddev binary
 basedir=$PWD
 
 # Results file
-results_file="${basedir}/import_times_report.csv"
+results_file="${basedir}/import_times_report.$(date +'%Y%m%d%H%M%S').csv"
 echo "ddev_version,database_version,import_file,import_file_size,elapsed_time" > "$results_file"
 
 # Function to download and install ddev for a specific version
@@ -41,6 +43,7 @@ for ddev_version in $ddev_versions; do
 #    echo "ddev already exists in $ddev_binary_path, please remove it" && exit 1
 #  fi
   rm -f ${ddev_binary_path}
+  install_ddev $ddev_version
 
   for database_version in $database_versions; do
     for import_file in $import_files; do
