@@ -9,7 +9,7 @@ set -eu -o pipefail
 # Configuration variables
 ddev_versions="v1.24.1 HEAD" # Space-separated list of ddev versions
 #ddev_versions="HEAD"
-database_versions="mariadb:10.11 mysql:8.0 mysql:8.4"
+database_versions="mariadb:10.11 mysql:8.0"
 #database_versions="mysql:8.0 mysql:8.4"
 import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
 import_files="$HOME/workspace/database-performance/tarballs/d11.sql.gz $HOME/tmp/100k.sql.gz"
@@ -50,8 +50,9 @@ for ddev_version in $ddev_versions; do
       tmpdir=$HOME/tmp/compare-imports/${tmpdesc}
       mkdir -p ${tmpdir}
 #      echo "tmpdir=$tmpdir"
-      cd ${tmpdir} && (ddev delete -Oy || true) && rm -rf .ddev
-      ddev config --database=$database_version --project-name="${database_version//:/}"|| continue # if db type is not supported
+      name=${database_version//:/}
+      cd ${tmpdir} && ddev delete -Oy $name && rm -rf .ddev
+      ddev config --database=$database_version --project-name="${name}"
       ddev start -y
       echo "Importing $import_file using ddev version $(ddev --version) database $database_version"
 
