@@ -15,12 +15,13 @@ import_files="$HOME/tmp/100k.sql.gz" # Space-separated list of import files
 #import_files="$HOME/workspace/database-performance/tarballs/d11.sql.gz"
 
 ddev_binary_path="/usr/local/bin/ddev" # Path to place the ddev binary
-docker_platform="$(ddev version -j | jq -r '.raw[\"docker-platform\"]')"
+docker_platform=$(ddev version -j | jq -r '.raw["docker-platform"]')
 basedir=$PWD
 
 # Results file
 results_file="${basedir}/import_times_report.${docker_platform}.$(date +'%Y%m%d%H%M%S').csv"
-echo "ddev_version,database_version,import_file,import_file_size,elapsed_time" > "$results_file"
+echo "# hostname: $(hostname)" > "$results_file"
+echo "ddev_version,database_version,import_file,import_file_size,elapsed_time" >> "$results_file"
 
 # Function to download and install ddev for a specific version
 install_ddev() {
@@ -69,18 +70,8 @@ for ddev_version in $ddev_versions; do
 
       # Record the result
       echo "$(ddev --version | awk '{print $3}'),$database_version,$import_file,$(ls -l $import_file | awk '{print $5}'), $elapsed_time" >> "$results_file"
-      ddev mysql -e "SELECT COUNT(*) FROM node; SELECT COUNT(*) FROM USERS;"
-      ddev mysql -e '
-        SELECT
-            table_schema AS database_name,
-            ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS total_size_in_mb
-        FROM
-            information_schema.tables
-        GROUP BY
-            table_schema
-        ORDER BY
-            total_size_in_mb DESC;
-      '
+      ddev mysql -e "SELECT (SELECT COUNT(*) FROM users) AS user_count, (SELECT COUNT(*) FROM node) AS node_count;"
+      ddev mysql -e 'SELECT table_schema AS database_name, ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb FROM information_schema.tables WHERE table_schema = "db";'
       ddev delete -Oy && ddev poweroff
     done
   done
