@@ -57,7 +57,7 @@ for ddev_version in $ddev_versions; do
       cd ${tmpdir} && ddev delete -Oy $name && rm -rf .ddev
       ddev config --database=$database_version --project-name="${name}"
       ddev start -y
-      echo "Importing $import_file using ddev version $(ddev --version) database $database_version"
+      echo "Importing $import_file using  $(ddev --version) database $database_version"
 
       # Measure the time taken for the import
       start_time=$(date +%s)
