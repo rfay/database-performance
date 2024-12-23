@@ -19,6 +19,7 @@ Areas of exploration:
 
 These dumps have no confidential data and are entirely generated using publicly available information.
 
-* [Drupal CMS db.sql.gz](https://drive.google.com/file/d/1eOTsh_lJ7cpGbVDkyu_kgderzh2DfWM3/view?usp=sharing) (download with web browser, not curl). Created by `create-large-db.sh`
+* [Drupal CMS 100K node 100k.sql.gz](https://drive.google.com/file/d/1Atwvqo8OH0PMoOYq-9l8Tnrc5SNYz_5I/view?usp=sharing) (download with web browser, not curl). Created by `create-large-db.sh`
+* [Drupal CMS 1M node 1M.sql.gz](https://drive.google.com/file/d/1Atwvqo8OH0PMoOYq-9l8Tnrc5SNYz_5I/view?usp=sharing)
 * [Drupal CMS MariaDB 10.11 DDEV snapshot](https://drive.google.com/file/d/1-UYSzfF_ybEFlLu6I4txbHGlWbiimo70/view?usp=sharing) (download with web browser)
 
