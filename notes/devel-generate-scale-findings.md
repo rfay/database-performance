@@ -23,6 +23,16 @@ password.options:
 Then `ddev drush cr`. **This is disposable-dev-database-only** -- revert
 before this ever goes near production data (delete the file, `ddev drush cr`).
 
+Bcrypt embeds its cost factor in the hash string itself (`$2y$05$...` vs
+`$2y$12$...`), so lowering `services.yml`'s configured cost has no effect on
+already-hashed passwords either way -- it only governs the cost used for
+passwords hashed *after* the change. In the d11 test project specifically,
+`web/sites/default/services.yml` was committed as-is (not reverted): every
+generated user's password is the known value `test`, and the project is
+explicitly testing-only, so there's no real secret the weaker cost would be
+exposing. Don't carry this file into anything that isn't disposable test
+data -- the comment at the top of the committed file says as much.
+
 Measured throughput with this tuning, in this environment: **~100-270
 users/sec** (varies with batch size / existing table size, see below),
 **~70-100 nodes/sec**.
