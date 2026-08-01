@@ -54,20 +54,26 @@ PUSH=""
 PLATFORMS="linux/amd64,linux/arm64"
 BUILDER="ddev-db-seed-builder"
 
-for arg in "$@"; do
-  case "$arg" in
-    --seed-file=*) SEED_FILE="${arg#*=}" ;;
-    --base-image=*) BASE_IMAGE="${arg#*=}" ;;
-    --tag=*) TAG="${arg#*=}" ;;
-    --platforms=*) PLATFORMS="${arg#*=}" ;;
-    --builder=*) BUILDER="${arg#*=}" ;;
-    --push) PUSH=true ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --seed-file=*) SEED_FILE="${1#*=}"; shift ;;
+    --seed-file) SEED_FILE="$2"; shift 2 ;;
+    --base-image=*) BASE_IMAGE="${1#*=}"; shift ;;
+    --base-image) BASE_IMAGE="$2"; shift 2 ;;
+    --tag=*) TAG="${1#*=}"; shift ;;
+    --tag) TAG="$2"; shift 2 ;;
+    --platforms=*) PLATFORMS="${1#*=}"; shift ;;
+    --platforms) PLATFORMS="$2"; shift 2 ;;
+    --builder=*) BUILDER="${1#*=}"; shift ;;
+    --builder) BUILDER="$2"; shift 2 ;;
+    --push) PUSH=true; shift ;;
     -h|--help)
       echo "Usage: $0 --seed-file=<path> --base-image=<image:tag> --tag=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>]"
+      echo "(--opt=value and --opt value are both accepted.)"
       exit 0
       ;;
     *)
-      echo "Unknown argument: $arg" >&2
+      echo "Unknown argument: $1" >&2
       exit 1
       ;;
   esac
