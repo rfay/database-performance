@@ -94,10 +94,11 @@ usernames (they contain no underscore) and has ~4.3 billion possible
 suffixes, so collision probability stays negligible at any scale this
 project needs. No DB uniqueness check is even necessary.
 
-Measured: 398,000 users (100K -> 500K) in ~25 minutes at a steady
-~260-270/sec, zero collisions, zero retries. This is the right tool once the
-existing user pool is large enough that `genu_topup.sh`'s retry yield starts
-dropping into the tens-per-attempt range.
+Measured: 398,000 users (100K -> 500K) in 21m43s (~305/sec, flat -- no
+degradation as the pool grew), zero collisions, zero retries. This is the
+right tool once the existing user pool is large enough that
+`genu_topup.sh`'s retry yield starts dropping into the tens-per-attempt
+range.
 
 Note: this script skips `DevelGenerateBase::populateFields()` -- fine here
 since the only non-base field on this project's `user` bundle is
@@ -155,11 +156,23 @@ generation processes racing against the same tables.
 | Operation | Rate | Notes |
 |---|---|---|
 | `genu` (small pool) | ~185-270 users/sec | degrades as existing pool approaches word() namespace |
-| `genu_fast.php` | ~260-270 users/sec | flat, no degradation, any pool size |
+| `genu_fast.php` | ~305 users/sec | flat, no degradation, any pool size (measured 100K->500K) |
 | `genc` | ~70-100 nodes/sec | flat, no degradation |
-| `ddev snapshot` save | ~9s | for a ~710MB DB |
+| `ddev snapshot` save | ~9-30s | ~9s for 710MB, ~30s for 2.6GB (compressed) / 11.9GB (live DB) |
 | `ddev import-db` | ~10s | for a ~1GB `.sql.gz` |
 | entity-API `--kill` delete | minutes+ | avoid; restore a snapshot instead |
+
+## Final tier numbers (this session)
+
+| Tier | Users | Nodes | Live DB size | Snapshot size (zstd) | Generation time (this tier only) |
+|---|---|---|---|---|---|
+| Medium | 20,015 | 100,038 | ~672MB | 148MB | ~19 min |
+| Large | 100,000 | 500,038 | ~3.05GB | 710MB | ~2.6 hrs (incl. one retry-script false start) |
+| Xlarge | 500,000 | 2,000,000 | ~11.85GB | 2.61GiB | 21m43s (users, `genu_fast.php`) + 4h17m41s (nodes, `genc`) = ~4.66 hrs |
+
+Each tier was built additively on top of the previous one (no restarts),
+checkpointed with `ddev snapshot --name=<tier>` between tiers so a bad step
+only costs a restore, not a re-run.
 
 ## Next: initializer-snapshot `ddev start` timing
 
