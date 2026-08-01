@@ -439,3 +439,51 @@ Only the Medium and Xlarge tiers were tested for the two baked-image
 techniques (time budget, and the Large tier's initializer-snapshot number
 was also never captured); repeating both scripts against
 `500k-nodes-100k-users` would fill out the middle row.
+
+### Multi-platform build/push for technique B
+
+Technique A's image is only ever built locally by `ddev start` for the
+architecture it's running on, so it never needs to be multi-platform. But
+technique B's whole point is a publishable, shareable image, and a
+teammate's laptop might be amd64 or arm64 -- so it needs a real multi-arch
+manifest list, the same as `ddev/ddev`'s own dbserver images.
+
+`containers/ddev-dbserver/build_image.sh` in the ddev repo is the reference
+pattern: `docker buildx build --push --platform linux/amd64,linux/arm64 ...`
+for a real multi-arch push, versus `--load` (which only supports one native
+platform at a time -- the docker daemon has no concept of a manifest list)
+for a fast local smoke test. `scripts/build-and-push-seeded-image.sh` here
+follows the same split, simplified for the one-Dockerfile seed-image case
+(no matrix of db types/versions to loop over -- a project only needs one
+image per snapshot tier/db-version combination it actually uses).
+
+One important simplification specific to this Dockerfile: it has no `RUN`
+steps, only `COPY base_db.zst ...`. A `COPY` doesn't execute anything inside
+the target platform's container -- BuildKit assembles the filesystem diff
+directly -- so **no QEMU/binfmt emulation is needed** for a multi-platform
+build here, unlike Dockerfiles that compile or run arch-specific commands.
+Confirmed: a `linux/amd64,linux/arm64` build of this Dockerfile completed in
+~25s on an amd64-only host with no binfmt handlers registered at all.
+
+The script uses a persistent `docker-container` buildx builder (created
+once, named `ddev-db-seed-builder`), not the default `docker`-driver
+builder -- that one can't export multi-platform manifest lists at all, only
+single-native-platform images. A persistent builder also keeps BuildKit's
+layer cache warm across repeated builds of the same seed.
+
+Naming convention used here, since the seed is tied to a specific db
+type/version (a mariadb_11.8 seed won't restore cleanly as a mariadb_10.11
+seed) and a single multi-arch tag already covers both architectures -- no
+need for separate `-amd64`/`-arm64` tags:
+
+```
+<registry>/<org>/ddev-db-seed-<project>:<tier>-<snapshot-description>-<dbtype>_<dbversion>
+ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8
+```
+
+Verified end-to-end with `--load` (single-arch, no registry needed) against
+the Medium seed -- built and loaded successfully in ~15s, image runs and
+serves the seed exactly as the earlier technique-B test did. The `--push`
+path was written and reviewed against `build_image.sh`'s pattern but not
+exercised in this environment (no registry credentials configured) -- run
+`docker login <registry>` first, then `--push`, to publish for real.
