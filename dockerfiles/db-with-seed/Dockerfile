@@ -8,6 +8,10 @@
 #   cp /path/to/some-snapshot-mariadb_11.8.zst ./base_db.zst
 #   docker build --build-arg BASE_IMAGE=ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
 #     -t ddev-db-seed-d11:medium-100k-nodes-20k-users .
-ARG BASE_IMAGE
+# The default here is never actually used -- build-and-push-seeded-image.sh
+# always passes --build-arg BASE_IMAGE=... -- it's just a syntactically
+# valid placeholder so `docker build`'s linter doesn't warn about an empty
+# default resolving an invalid FROM.
+ARG BASE_IMAGE=alpine:latest
 FROM ${BASE_IMAGE}
 COPY base_db.zst /mysqlbase/custom/base_db.zst
