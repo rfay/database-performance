@@ -17,8 +17,9 @@ Areas of exploration:
 * [genu_topup.sh](scripts/genu_topup.sh) - Retry-until-target wrapper around `drush genu`, for growing a user table by a moderate amount without hitting devel_generate's username-collision bug (see notes below).
 * [genu_fast.php](scripts/genu_fast.php) - Collision-proof user generator (`drush php:script`) for growing a user table by a large amount quickly; recommended once the existing user count makes `genu_topup.sh`'s retry yield too small to be practical.
 * [test-initializer-snapshot.sh](scripts/test-initializer-snapshot.sh) - Measures `ddev start` time when a project's fresh database volume is seeded from a reserved `initializer` snapshot ([ddev/ddev#8608](https://github.com/ddev/ddev/pull/8608), `pkg/ddevapp/base_db_seed.go`). Destructive to the project's live DB (removes the db volume) -- only run after saving a snapshot you can restore from.
+* [test-baked-image-seed.sh](scripts/test-baked-image-seed.sh) - Same measurement as above, but for a base_db seed baked into the **dbimage** itself (either via a project `.ddev/db-build/Dockerfile` or a standalone image set via `dbimage:` config -- see [dockerfiles/db-with-seed](dockerfiles/db-with-seed)). Also destructive to the project's live DB.
 
-See [notes/devel-generate-scale-findings.md](notes/devel-generate-scale-findings.md) for a full writeup: `password.options.cost` tuning for fast disposable-DB hashing, why `genu` degrades badly at scale and how the two scripts above address it, why `--kill` is a trap for iterative builds, and using `ddev snapshot` to checkpoint between size tiers instead of full DB export/import.
+See [notes/devel-generate-scale-findings.md](notes/devel-generate-scale-findings.md) for a full writeup: `password.options.cost` tuning for fast disposable-DB hashing, why `genu` degrades badly at scale and how the two scripts above address it, why `--kill` is a trap for iterative builds, using `ddev snapshot` to checkpoint between size tiers instead of full DB export/import, and a comparison of all three ways to seed a fresh database volume (`initializer` snapshot vs. the two baked-into-dbimage techniques).
 
 ## Available db dumps
 

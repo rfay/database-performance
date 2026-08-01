@@ -298,3 +298,144 @@ Only one tier was tested end-to-end here (time budget); repeating
 `test-initializer-snapshot.sh` against the `100k-nodes-20k-users` and
 `500k-nodes-100k-users` snapshots would fill out the by-size-tier comparison
 this was meant to produce.
+
+## Baking a seed into the dbimage itself (two more techniques from ddev/ddev#8608)
+
+The `initializer` snapshot above is a *project-level* seed: it lives in
+`.ddev/db_snapshots/initializer-<type>_<version>.zst` and only affects that
+one project's fresh-volume starts. ddev/ddev#8608 also supports baking the
+same kind of seed into the **dbimage** itself, so a team or CI pipeline can
+ship a ready-to-use database as part of the image, with no snapshot file or
+import step required at all. See
+[Seeding a Custom Starter Database in `dbimage`](https://docs.ddev.com/en/stable/users/extend/customizing-images/#seeding-a-custom-starter-database-in-dbimage)
+and `pkg/ddevapp/base_db_seed.go` (`CustomBaseDBSeedPathPrefix =
+"/mysqlbase/custom/base_db"`).
+
+Precedence, confirmed by reading `containers/ddev-dbserver/files/docker-entrypoint.sh`:
+on a fresh (uninitialized) db volume, ddev-dbserver checks, in order:
+
+1. `/mnt/snapshots/initializer-<type>_<version>.{zst,gz}` -- the project-level `initializer` snapshot
+2. `/mysqlbase/custom/base_db.{zst,gz}` -- baked into a derived dbimage (either technique below)
+3. `/mysqlbase/base_db.{zst,gz}` -- the stock DDEV starter database
+
+So an `initializer` snapshot always wins if present, even when the dbimage
+also has a seed baked in -- a teammate can override a shared baked-in-image
+seed for their own project just by dropping in an `initializer` snapshot,
+without rebuilding anything.
+
+The seed file format is identical to an `initializer` snapshot or a regular
+`ddev snapshot` file -- a zstd- or gzip-compressed `mariabackup`/`xtrabackup`
+stream (physical copy, not a SQL dump) -- so any existing named `ddev
+snapshot` file can be renamed/copied straight into either technique below
+with no conversion step.
+
+There are two ways to get a seed baked into a dbimage:
+
+### Technique A: project-level `.ddev/db-build/Dockerfile`
+
+Drop the snapshot file into `.ddev/db-build/` (that directory is the Docker
+build "context") and add a `.ddev/db-build/Dockerfile`:
+
+```dockerfile
+COPY base_db.zst /mysqlbase/custom/base_db.zst
+```
+
+`ddev start`/`ddev restart` builds this automatically into a derived image
+tagged `<dbimage>-<project>-built` -- no manual `docker build`, no `dbimage:`
+config change needed. This is the path of least resistance for "I have a
+project-specific dataset and want teammates' fresh checkouts to start
+already seeded," since it's committed alongside the project (though the
+seed file itself is large and shouldn't be committed to git -- see below).
+
+Verified with `scripts/test-baked-image-seed.sh`, after `ddev stop` +
+`docker volume rm <project>-mariadb` to force a truly fresh volume:
+
+| Tier | Seed size (compressed) | Rebuild time (`ddev utility rebuild -s db`, cold) | `ddev start` (fresh volume) | Verified rows (nodes/users) |
+|---|---|---|---|---|
+| Medium (100k-nodes-20k-users) | 141MB | (built inline during `ddev restart`, a few seconds) | **19s** | 100,038 / 20,015 |
+| Xlarge (2m-nodes-500k-users) | 2.6GB | 2m5s (`docker build` unpacking the new layer) | **90s** | 2,000,000 / 500,000 |
+
+The rebuild step (re-running whenever the seed file's content changes) is
+separate from and prior to the timed `ddev start` -- in CI you'd do this
+once when publishing an image, not on every developer's machine.
+
+### Technique B: a standalone alternate dbimage via `dbimage:` config
+
+For a seed that should be reusable across *multiple* projects/checkouts
+(e.g. a QA or CI dataset published as its own image, independent of any one
+project's `.ddev` directory), build a standalone image directly with `docker
+build` and point `dbimage:` at it:
+
+```dockerfile
+# dockerfiles/db-with-seed/Dockerfile
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY base_db.zst /mysqlbase/custom/base_db.zst
+```
+
+```bash
+cp some-snapshot-mariadb_11.8.zst dockerfiles/db-with-seed/base_db.zst
+docker build --build-arg BASE_IMAGE=ddev/ddev-dbserver-mariadb-11.8:<tag> \
+  -t ddev-db-seed-d11:medium-100k-nodes-20k-users dockerfiles/db-with-seed
+```
+
+Then set the tag in `.ddev/config.yaml` (shared with the team) or
+`.ddev/config.local.yaml` (gitignored, personal-only override -- what was
+used for this test, so other tiers could be swapped in without touching
+shared config):
+
+```yaml
+dbimage: ddev-db-seed-d11:medium-100k-nodes-20k-users
+```
+
+Each such image was built with a clearly-named, persistent tag (rather than
+a throwaway one) specifically so it stays around for manual testing later,
+not just for this one run -- swapping tiers is just editing `dbimage:` and
+restarting, no rebuild needed as long as the image already exists locally
+(or is pulled from a registry).
+
+Note ddev *still* builds one more derived layer on top of this
+(`<dbimage>-<project>-built`, same as technique A) even though the seed is
+already baked in one layer down -- that's why this technique's `ddev start`
+runs a bit slower than technique A's for the same tier, despite both landing
+on an identical final seed file.
+
+| Tier | Seed size (compressed) | Standalone `docker build` time | `ddev start` (fresh volume) | Verified rows (nodes/users) |
+|---|---|---|---|---|
+| Medium (100k-nodes-20k-users) | 141MB | ~7s | **29s** | 100,038 / 20,015 |
+| Xlarge (2m-nodes-500k-users) | 2.6GB | ~113s (mostly the 2.8GB build-context transfer + layer export) | **85s** | 2,000,000 / 500,000 |
+
+### Comparison across all three seeding techniques (Xlarge tier, 2.6GB seed)
+
+| Technique | `ddev start` (fresh volume) |
+|---|---|
+| Project-level `initializer` snapshot | 76s |
+| Baked into dbimage, technique A (`.ddev/db-build/Dockerfile`) | 90s |
+| Baked into dbimage, technique B (standalone image + `dbimage:` config) | 85s |
+
+All three land in the same rough ballpark (76-90s) for an 11.85GB live
+database from a 2.6GB compressed seed -- unsurprising, since all three use
+the identical zstd-decompress + `mariabackup --copy-back` restore path in
+`docker-entrypoint.sh`; the differences are noise-level plus whatever small
+overhead comes from ddev building one extra derived image layer on top in
+the two baked-image techniques. The meaningful choice between them is
+therefore about *seed distribution and lifecycle*, not raw restore speed:
+
+* **`initializer` snapshot** -- fastest to iterate with (drop a file, `ddev
+  start`), but it's per-project and per-checkout; nothing to publish or
+  version as an image.
+* **Technique A (`db-build`)** -- seed travels with the project's own repo
+  history/checkout convention (though the seed file itself must be
+  distributed out-of-band, e.g. via the same external hosting used for the
+  snapshots in this repo's README -- it's far too large for git). Good
+  default when the dataset is specific to one project.
+* **Technique B (standalone image + `dbimage:`)** -- seed is a
+  publishable, versionable artifact independent of any project checkout,
+  the same way a CI-built application image is. Best fit for a shared
+  QA/CI dataset meant to be pulled by name across multiple projects or
+  machines, or distributed via a registry instead of a snapshot file.
+
+Only the Medium and Xlarge tiers were tested for the two baked-image
+techniques (time budget, and the Large tier's initializer-snapshot number
+was also never captured); repeating both scripts against
+`500k-nodes-100k-users` would fill out the middle row.
