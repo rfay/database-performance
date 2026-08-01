@@ -79,8 +79,31 @@ elapsed=$((end_time - start_time))
 
 echo "ddev start took ${elapsed}s"
 
+# Don't trust a bare "ddev start succeeded" -- the dbserver image silently
+# falls back to the stock/derived-image seed if it doesn't recognize the
+# initializer file at all (e.g. an image built before this feature existed),
+# and that fallback also returns success in well under a minute. Confirm the
+# container itself actually used our file, then confirm the seeded data is
+# really there.
+seed_source=$(docker logs "ddev-${PROJECT_NAME}-db" 2>&1 | grep -o "Database initialized from .*" | tail -1 || true)
+echo "dbserver reports: ${seed_source:-<no 'Database initialized from' line found>}"
+if ! docker logs "ddev-${PROJECT_NAME}-db" 2>&1 | grep -q "initializer-${DB_TYPE}_${DB_VERSION}"; then
+  echo "FAIL: the dbserver container never referenced initializer-${DB_TYPE}_${DB_VERSION}.* -- it did not use our seed file." >&2
+  echo "This usually means the running dbserver image's entrypoint predates the initializer-seed feature (check: docker exec ddev-${PROJECT_NAME}-db grep -n initializer /docker-entrypoint.sh)." >&2
+  echo "Timing/results below reflect whatever it actually restored (likely the stock/derived-image seed), NOT the initializer snapshot -- do not record this as a valid result." >&2
+  restore_ok=0
+else
+  restore_ok=1
+fi
+
 echo "Verifying seeded data..."
-ddev drush sqlq "SELECT (SELECT COUNT(*) FROM node_field_data) AS nodes, (SELECT COUNT(*) FROM users_field_data) AS users;" || true
+row_counts=$(ddev drush sqlq "SELECT (SELECT COUNT(*) FROM node_field_data) AS nodes, (SELECT COUNT(*) FROM users_field_data) AS users;" 2>&1) || row_counts="<query failed: tables likely don't exist -- seed did not happen as expected>"
+echo "$row_counts"
+
+if [ "$restore_ok" != "1" ]; then
+  echo "Not recording a results row (seed source unverified) and leaving the initializer file in place for you to investigate." >&2
+  exit 1
+fi
 
 results_file="${PROJECT_DIR}/initializer_start_times.${DOCKER_PLATFORM}.csv"
 if [ ! -f "$results_file" ]; then

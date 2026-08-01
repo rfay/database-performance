@@ -191,8 +191,51 @@ to test with, just a normal recent `ddev` binary.
 `scripts/test-initializer-snapshot.sh <snapshot-name>` automates the test:
 copies an existing named `ddev snapshot` to the reserved
 `initializer-<type>_<version>` filename, forces a fresh db volume (`ddev
-poweroff` + `docker volume rm <project>-mariadb`), times `ddev start`
+stop` + `docker volume rm <project>-mariadb`), times `ddev start`
 end-to-end, verifies the seeded row counts, and records results to a CSV
-(same shape as `compare-imports.sh`'s report). Run it once per size tier
-(Medium/Large/Xlarge snapshot) to get first-boot cost as a function of DB
-size. Results: TBD once the Xlarge tier finishes generating.
+(same shape as `compare-imports.sh`'s report).
+
+### First run result: the feature isn't actually reachable with a stock v1.25.3 image
+
+Ran it against the 2M-node/500K-user snapshot. `ddev start` returned success
+in **14s** -- suspiciously fast for restoring an 11.85GB database from a
+2.6GiB `.zst`. Verifying row counts confirmed why:
+`Table 'db.node_field_data' doesn't exist`. `docker logs ddev-d11-db` showed
+`Database initialized from /var/tmp/base_db`, and tracing the entrypoint
+(`set -x` output) went straight from `target=/var/tmp/base_db` to
+`snapshot=/mysqlbase/base_db.gz` -- **no candidate-loop trace at all**, i.e.
+it never even looked for an `initializer-*` file.
+
+Root cause: `docker exec ddev-d11-db grep -n initializer /docker-entrypoint.sh`
+in the *running container* comes back empty -- the entrypoint script baked
+into the released `ddev/ddev-dbserver-mariadb-11.8:v1.25.3` image (built
+2026-07-01) predates the initializer-seed feature entirely. It's still the
+hardcoded `gunzip -c /mysqlbase/base_db.gz | xbstream -x` path the PR
+description talks about. The `ddev` CLI binary in this environment does
+carry the Go-side awareness of the feature (`GetInitializerSnapshotFile()`,
+etc., from a local checkout of the `20260720_weitzman_zstd_base_db` branch),
+but **the CLI and the dbserver container image are versioned/shipped
+independently** -- having a CLI that knows about the feature is not
+sufficient to exercise it. The container silently falls back to the stock
+seed rather than erroring, which made this easy to miss (a naive "did `ddev
+start` succeed?" check would have reported false success).
+
+Practical fallout: this cost one fresh-volume/restore round-trip on a live
+11.85GB project database (recovered via `ddev snapshot restore
+2m-nodes-500k-users` in 84s, confirmed no data loss). Anyone repeating this
+test should verify row counts immediately after `ddev start` returns, every
+time -- not just check the exit code.
+
+**To actually test this feature end-to-end**, the project's dbserver image
+needs to be built from the feature branch/PR, not the stock release:
+
+```bash
+cd ~/workspace/ddev/containers/ddev-dbserver
+make mariadb_11.8   # or the single-arch variant for your platform
+```
+
+then point the project at the resulting image (`.ddev/db-build/` custom
+Dockerfile, or override `dbimg` in `.ddev/config.yaml`) before re-running
+`test-initializer-snapshot.sh`. Not yet done in this session -- results with
+a proper feature-branch image, and the ddev-start-time-by-tier comparison
+table this was meant to produce, are still TBD.
