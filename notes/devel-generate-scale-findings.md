@@ -227,15 +227,64 @@ test should verify row counts immediately after `ddev start` returns, every
 time -- not just check the exit code.
 
 **To actually test this feature end-to-end**, the project's dbserver image
-needs to be built from the feature branch/PR, not the stock release:
+needs to be built from the feature branch/PR, not the stock release. Turns
+out a no-build shortcut exists here: the feature branch's CI already
+publishes its image, so once the *matching CLI binary* is on `PATH` (this
+environment has one at `/home/coder/bin/ddev`, version
+`v1.25.3-56-gf8cf6a3a9` -- `source ~/.bash_profile` if the stock
+`/usr/bin/ddev` v1.25.3 shadows it), `ddev describe` reports `dbimg:
+ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db`, and
+`docker pull` on that exact tag succeeds directly -- no local `make` build
+needed. Confirmed via `docker exec <db-container> grep -n initializer
+/docker-entrypoint.sh` that this pulled image *does* carry the initializer
+logic (unlike the stock v1.25.3 image above).
 
-```bash
-cd ~/workspace/ddev/containers/ddev-dbserver
-make mariadb_11.8   # or the single-arch variant for your platform
+### Second run: a false failure in the *verification*, not the feature
+
+With the correct binary/image, `ddev start`'s own output clearly showed:
+
+```
+Initializing new database volume from the 'initializer' snapshot
+~/workspace/d11/.ddev/db_snapshots/initializer-mariadb_11.8.zst (2.6GB)...
 ```
 
-then point the project at the resulting image (`.ddev/db-build/` custom
-Dockerfile, or override `dbimg` in `.ddev/config.yaml`) before re-running
-`test-initializer-snapshot.sh`. Not yet done in this session -- results with
-a proper feature-branch image, and the ddev-start-time-by-tier comparison
-table this was meant to produce, are still TBD.
+...and the seeded row counts came back correct (2,000,000 / 500,000) -- the
+feature genuinely worked. But the script's own post-hoc verification (`docker
+logs <container> | grep -q "initializer-..."`) reported FAIL anyway, twice in
+a row, even after adding a generous 60s retry loop. Manually re-running the
+exact same `docker logs | grep` command moments later matched instantly,
+which ruled out a real timing lag.
+
+The actual culprit, on reflection: `grep -q` exits as soon as it finds one
+match, closing its end of the pipe. If `docker logs` (piped live, not yet
+finished writing) is still producing output at that instant, it gets
+`SIGPIPE` and exits non-zero -- and with `pipefail` set, bash reports the
+*pipeline's* exit status as that non-zero code even though `grep` itself
+succeeded. (Capturing `docker logs` into a variable first, removing the live
+pipe, didn't fix it either in this instance, which is a good reminder that
+"looks like it should be the SIGPIPE thing" and "actually is" aren't the
+same -- don't stop at the first plausible theory without re-testing.) The
+robust fix ended up being to stop reconstructing the answer from container
+logs at all, and instead check `ddev start`'s own stdout for the exact
+Go-side announcement string (`AnnounceBaseDBSeed` in
+`pkg/ddevapp/base_db_seed.go`) -- ddev already tells you authoritatively
+whether it used the initializer snapshot; parsing dbserver's internal log
+trace after the fact was solving an already-solved problem, and solving it
+worse.
+
+### Final, verified result
+
+| Snapshot | Size (compressed) | Live DB size | `ddev start` (initializer seed) | `ddev snapshot restore` (for comparison) |
+|---|---|---|---|---|
+| `2m-nodes-500k-users` (Xlarge: 2M nodes/500K users) | 2.6GiB | 11.85GB | **76s** | 84s |
+
+The initializer-seed path (fresh volume, first boot) came in slightly faster
+than a normal snapshot restore against an already-existing project (which
+has to stop/tear down a running db container first) -- roughly in the same
+ballpark, as expected, since both use the same zstd-decompress +
+`mariabackup --copy-back` mechanism under the hood.
+
+Only one tier was tested end-to-end here (time budget); repeating
+`test-initializer-snapshot.sh` against the `100k-nodes-20k-users` and
+`500k-nodes-100k-users` snapshots would fill out the by-size-tier comparison
+this was meant to produce.

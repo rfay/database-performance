@@ -27,5 +27,8 @@ These dumps have no confidential data and are entirely generated using publicly 
 * [Drupal CMS 100K node 100k.sql.gz](https://drive.google.com/file/d/1Atwvqo8OH0PMoOYq-9l8Tnrc5SNYz_5I/view?usp=sharing) (download with web browser, not curl). Created by `create-large-db.sh`
 * [Drupal CMS 1M node 1M.sql.gz](https://drive.google.com/file/d/1Atwvqo8OH0PMoOYq-9l8Tnrc5SNYz_5I/view?usp=sharing)
 * [Drupal CMS MariaDB 10.11 DDEV snapshot](https://drive.google.com/file/d/1-UYSzfF_ybEFlLu6I4txbHGlWbiimo70/view?usp=sharing) (download with web browser)
-* Drupal 11 / Umami, generated with `genu_fast.php` + `genc` (see notes): Medium (20K users/100K nodes), Large (100K users/500K nodes), Xlarge (500K users/2M nodes) DDEV snapshots -- links to follow.
+* Drupal 11 / Umami, generated with `genu_fast.php` + `genc` (see notes), MariaDB 11.8 DDEV snapshots (download with web browser, not curl):
+  * [Medium: 100k-nodes-20k-users (141MB)](https://drive.google.com/file/d/1Za7Y5-E7KXIFGHhshvRGs8TMOoKrhiMF/view?usp=drive_link)
+  * [Large: 500k-nodes-100k-users (678MB)](https://drive.google.com/file/d/1y3Ax9y01f2HC4v3o_OYQCKJMXTtXkyF4/view?usp=drive_link)
+  * [Xlarge: 2m-nodes-500k-users (2.61GB)](https://drive.google.com/file/d/1NItXgX_o1QRvlidqd8AfTRr60FEIGw_l/view?usp=drive_link)
 

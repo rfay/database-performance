@@ -72,28 +72,36 @@ ddev stop
 docker volume rm "${PROJECT_NAME}-mariadb" 2>/dev/null || docker volume rm "${PROJECT_NAME}-${DB_TYPE}" 2>/dev/null || true
 
 echo "Timing ddev start with initializer seed present..."
+ddev_start_log=$(mktemp)
 start_time=$(date +%s)
-ddev start -y
+ddev start -y 2>&1 | tee "$ddev_start_log"
+ddev_start_status=${PIPESTATUS[0]}
 end_time=$(date +%s)
 elapsed=$((end_time - start_time))
+if [ "$ddev_start_status" -ne 0 ]; then
+  echo "ERROR: ddev start exited ${ddev_start_status}" >&2
+  rm -f "$ddev_start_log"
+  exit 1
+fi
 
 echo "ddev start took ${elapsed}s"
 
 # Don't trust a bare "ddev start succeeded" -- the dbserver image silently
 # falls back to the stock/derived-image seed if it doesn't recognize the
 # initializer file at all (e.g. an image built before this feature existed),
-# and that fallback also returns success in well under a minute. Confirm the
-# container itself actually used our file, then confirm the seeded data is
-# really there.
-seed_source=$(docker logs "ddev-${PROJECT_NAME}-db" 2>&1 | grep -o "Database initialized from .*" | tail -1 || true)
-echo "dbserver reports: ${seed_source:-<no 'Database initialized from' line found>}"
-if ! docker logs "ddev-${PROJECT_NAME}-db" 2>&1 | grep -q "initializer-${DB_TYPE}_${DB_VERSION}"; then
-  echo "FAIL: the dbserver container never referenced initializer-${DB_TYPE}_${DB_VERSION}.* -- it did not use our seed file." >&2
+# and that fallback also returns success in well under a minute. The most
+# direct, authoritative signal is ddev's OWN announcement (Go-side
+# AnnounceBaseDBSeed, printed by `ddev start` itself before the restore even
+# begins) -- not something reconstructed after the fact from container logs.
+ddev_start_output=$(cat "$ddev_start_log")
+rm -f "$ddev_start_log"
+if [[ "$ddev_start_output" == *"Initializing new database volume from the 'initializer' snapshot"* ]]; then
+  restore_ok=1
+else
+  echo "FAIL: ddev start never announced using the 'initializer' snapshot -- it did not use our seed file." >&2
   echo "This usually means the running dbserver image's entrypoint predates the initializer-seed feature (check: docker exec ddev-${PROJECT_NAME}-db grep -n initializer /docker-entrypoint.sh)." >&2
   echo "Timing/results below reflect whatever it actually restored (likely the stock/derived-image seed), NOT the initializer snapshot -- do not record this as a valid result." >&2
   restore_ok=0
-else
-  restore_ok=1
 fi
 
 echo "Verifying seeded data..."
