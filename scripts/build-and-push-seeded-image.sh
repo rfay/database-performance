@@ -28,6 +28,8 @@
 # Usage:
 #   build-and-push-seeded-image.sh --seed-file=<path> --base-image=<image:tag> --tag=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>]
 #
+# Every flag accepts either form: --tag=value or --tag value.
+#
 # Examples:
 #   # Fast local smoke test (single native arch, loaded into local docker):
 #   build-and-push-seeded-image.sh \
@@ -41,6 +43,27 @@
 #     --base-image=ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
 #     --tag=ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8 \
 #     --push
+#
+#   # Same thing with space-separated flags instead of --flag=value:
+#   build-and-push-seeded-image.sh \
+#     --seed-file /home/coder/workspace/d11/.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
+#     --base-image ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
+#     --tag randyfay/dbserver-100k \
+#     --platforms linux/arm64,linux/amd64 \
+#     --push
+#
+#   # Verify a pushed image really has both platforms (and see the digests):
+#   docker buildx imagetools inspect randyfay/dbserver-100k
+#
+#   # Use the pushed image in a project (triggers a real registry pull):
+#   #   echo 'dbimage: randyfay/dbserver-100k:latest' >> .ddev/config.local.yaml
+#   #   ddev stop && docker volume rm <project>-mariadb && ddev start
+#
+# This exact flow (multi-arch build, push to Docker Hub, remove the local
+# copy, then a fresh project pull+seed from the published tag) was verified
+# end-to-end against randyfay/dbserver-100k: pushed in ~7s, then a clean
+# `ddev start` pulled it and seeded a fresh volume in 32s, with correct row
+# counts (100,038 nodes / 20,015 users). See notes/devel-generate-scale-findings.md.
 
 set -eu -o pipefail
 

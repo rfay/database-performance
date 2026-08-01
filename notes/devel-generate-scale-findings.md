@@ -483,7 +483,22 @@ ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8
 
 Verified end-to-end with `--load` (single-arch, no registry needed) against
 the Medium seed -- built and loaded successfully in ~15s, image runs and
-serves the seed exactly as the earlier technique-B test did. The `--push`
-path was written and reviewed against `build_image.sh`'s pattern but not
-exercised in this environment (no registry credentials configured) -- run
-`docker login <registry>` first, then `--push`, to publish for real.
+serves the seed exactly as the earlier technique-B test did.
+
+The `--push` path was then verified for real too, against
+`randyfay/dbserver-100k` on Docker Hub (a repo the user explicitly
+authorized pushing to for these experiments): `docker buildx build --push
+--platform linux/arm64,linux/amd64 ...` completed in ~7s, and `docker buildx
+imagetools inspect randyfay/dbserver-100k` confirmed a proper manifest list
+with both a `linux/amd64` and a `linux/arm64` entry (plus their attestation
+manifests). To rule out any "it secretly used the local cache" doubt, the
+local image was removed (`docker rmi`) before pointing a project's
+`dbimage:` at the pushed tag -- `ddev start` then did a genuine registry
+pull (visible in its output) and seeded a fresh volume in 32s, with correct
+row counts (100,038 nodes / 20,015 users). This confirms the whole
+loop -- build, push, pull-from-scratch, seed -- works end-to-end with a
+real registry, not just in a same-machine `--load` smoke test.
+
+One argument-parsing bug surfaced during this: the script originally only
+accepted `--flag=value`, not the (more commonly typed) `--flag value` form,
+which is what got tried first. Fixed to accept both.
