@@ -1,0 +1,6 @@
+# Generated database artifacts are too large for the repo; they're linked in
+# README.md from external hosting instead.
+*.zst
+*.sql.gz
+!tarballs/d11.sql.gz
+db_snapshots/
