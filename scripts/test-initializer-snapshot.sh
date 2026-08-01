@@ -64,8 +64,11 @@ SNAPSHOT_SIZE=$(ls -l "$SNAPSHOT_FILE" | awk '{print $5}')
 echo "Using snapshot: $SNAPSHOT_FILE ($SNAPSHOT_SIZE bytes) as initializer for ${DB_TYPE}_${DB_VERSION}"
 cp "$SNAPSHOT_FILE" "$INITIALIZER_FILE"
 
-echo "Powering off and removing the db volume to force a fresh-volume start..."
-ddev poweroff
+echo "Stopping this project and removing its db volume to force a fresh-volume start..."
+# Project-scoped (not `ddev poweroff`, which would stop every other DDEV
+# project on the machine too) -- matches the pattern ddev's own test suite
+# uses (app.Stop() + dockerutil.RemoveVolume(app.Name + "-mariadb")).
+ddev stop
 docker volume rm "${PROJECT_NAME}-mariadb" 2>/dev/null || docker volume rm "${PROJECT_NAME}-${DB_TYPE}" 2>/dev/null || true
 
 echo "Timing ddev start with initializer seed present..."
