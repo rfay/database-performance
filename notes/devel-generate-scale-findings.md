@@ -166,10 +166,20 @@ generation processes racing against the same tables.
 DDEV has a feature (`pkg/ddevapp/base_db_seed.go`, `InitializerSnapshotName
 = "initializer"`) where a snapshot file named exactly
 `initializer-<dbtype>_<dbversion>.{zst,gz}` in `.ddev/db_snapshots/`
-auto-seeds a brand-new (empty) database volume on `ddev start`. This is
-related to [ddev/ddev#8608](https://github.com/ddev/ddev/pull/8608) (zstd
-support for the adjacent `base_db.gz` derived-image seeding path). Next
-step: measure `ddev start` time on a fresh DB volume seeded from an
-`initializer` snapshot at each of the size tiers generated here, to get real
-numbers for this feature's first-boot cost at scale. See
-`scripts/test-initializer-snapshot.sh` (to follow).
+auto-seeds a brand-new (empty) database volume on `ddev start`
+(`ddev-dbserver`'s `docker-entrypoint.sh` checks
+`/mnt/snapshots/initializer-<type>_<version>.{zst,gz}` before falling back
+to any derived-image or stock starter database). This is related to
+[ddev/ddev#8608](https://github.com/ddev/ddev/pull/8608) (zstd support for
+the adjacent `base_db.gz` derived-image seeding path) -- both landed on the
+`ddev/ddev` `main` branch as of this writing, so no special build is needed
+to test with, just a normal recent `ddev` binary.
+
+`scripts/test-initializer-snapshot.sh <snapshot-name>` automates the test:
+copies an existing named `ddev snapshot` to the reserved
+`initializer-<type>_<version>` filename, forces a fresh db volume (`ddev
+poweroff` + `docker volume rm <project>-mariadb`), times `ddev start`
+end-to-end, verifies the seeded row counts, and records results to a CSV
+(same shape as `compare-imports.sh`'s report). Run it once per size tier
+(Medium/Large/Xlarge snapshot) to get first-boot cost as a function of DB
+size. Results: TBD once the Xlarge tier finishes generating.

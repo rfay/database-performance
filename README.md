@@ -16,6 +16,7 @@ Areas of exploration:
 * [compare-imports.sh](scripts/compare-imports.sh) - Minor adjustments allow comparing imports with different DDEV versions, database versions, and import files. It can be run against a variety of docker providers to compare docker provider performance.
 * [genu_topup.sh](scripts/genu_topup.sh) - Retry-until-target wrapper around `drush genu`, for growing a user table by a moderate amount without hitting devel_generate's username-collision bug (see notes below).
 * [genu_fast.php](scripts/genu_fast.php) - Collision-proof user generator (`drush php:script`) for growing a user table by a large amount quickly; recommended once the existing user count makes `genu_topup.sh`'s retry yield too small to be practical.
+* [test-initializer-snapshot.sh](scripts/test-initializer-snapshot.sh) - Measures `ddev start` time when a project's fresh database volume is seeded from a reserved `initializer` snapshot ([ddev/ddev#8608](https://github.com/ddev/ddev/pull/8608), `pkg/ddevapp/base_db_seed.go`). Destructive to the project's live DB (removes the db volume) -- only run after saving a snapshot you can restore from.
 
 See [notes/devel-generate-scale-findings.md](notes/devel-generate-scale-findings.md) for a full writeup: `password.options.cost` tuning for fast disposable-DB hashing, why `genu` degrades badly at scale and how the two scripts above address it, why `--kill` is a trap for iterative builds, and using `ddev snapshot` to checkpoint between size tiers instead of full DB export/import.
 
