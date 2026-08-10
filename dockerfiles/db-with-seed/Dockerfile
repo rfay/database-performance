@@ -14,4 +14,11 @@
 # default resolving an invalid FROM.
 ARG BASE_IMAGE=alpine:latest
 FROM ${BASE_IMAGE}
+# com.ddev.image-tag (see ddev/ddev#8682) records the tag an image was built
+# as, so a derived image's provenance survives the retagging that would
+# otherwise make it anonymous. Re-stamping it here (rather than relying on
+# LABEL inheritance from BASE_IMAGE) lets --image-tag deliberately set a
+# stale value, for testing #8682's mismatch warning.
+ARG DDEV_IMAGE_TAG
+LABEL com.ddev.image-tag=${DDEV_IMAGE_TAG}
 COPY base_db.zst /mysqlbase/custom/base_db.zst
