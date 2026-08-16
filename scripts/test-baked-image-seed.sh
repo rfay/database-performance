@@ -7,12 +7,14 @@
 #   pkg/ddevapp/base_db_seed.go (CustomBaseDBSeedPathPrefix, getDerivedDBImageSeed)
 #   containers/ddev-dbserver/files/docker-entrypoint.sh (candidate seed list)
 #
-# ddev-dbserver looks for /mysqlbase/custom/base_db.{zst,gz} (zst preferred)
-# and restores it instead of the stock starter database whenever the
-# mariadb/mysql datadir has not yet been initialized (i.e. a fresh volume),
-# UNLESS a project-level `initializer` snapshot is also present (that one
-# wins -- see test-initializer-snapshot.sh). This script assumes the caller
-# has ALREADY built a dbimage with the seed baked in, either via:
+# ddev-dbserver looks for /mysqlbase/custom/base_db.{zst,gz,mbstream,xbstream}
+# (compressed .zst/.gz preferred over the raw, uncompressed .mbstream/
+# .xbstream streams added by ddev/ddev#8704) and restores it instead of the
+# stock starter database whenever the mariadb/mysql datadir has not yet been
+# initialized (i.e. a fresh volume), UNLESS a project-level `initializer`
+# snapshot is also present (that one wins -- see test-initializer-snapshot.sh).
+# This script assumes the caller has ALREADY built a dbimage with the seed
+# baked in, either via:
 #
 #   A) a project `.ddev/db-build/Dockerfile` containing
 #        COPY base_db.zst /mysqlbase/custom/base_db.zst

@@ -9,13 +9,23 @@
 # docker daemon can't load a multi-platform image locally -- only a
 # registry can hold a manifest list).
 #
-# Because the Dockerfile here is just `COPY base_db.zst ...` -- no RUN
+# Because the Dockerfile here is just `COPY base_db.<ext> ...` -- no RUN
 # steps -- multi-platform builds do NOT need QEMU/binfmt emulation. BuildKit
 # assembles the filesystem diff for each platform's base image directly; it
 # only needs to actually *execute* something in a foreign-arch container for
 # RUN instructions, which this Dockerfile has none of. Confirmed: a
-# linux/amd64,linux/arm64 build of this Dockerfile completes in ~25s on an
-# amd64-only host with no binfmt handlers registered.
+# linux/amd64,linux/arm64 build of this Dockerfile completed in ~25s on an
+# amd64-only host with no binfmt handlers registered, for a compressed .zst
+# seed -- an uncompressed .mbstream/.xbstream seed (ddev/ddev#8704) is much
+# larger, so expect the per-platform COPY step (still run once per platform;
+# BuildKit doesn't dedupe it across platforms since each is a distinct final
+# image) to take proportionally longer.
+#
+# The destination filename inside the image always matches --seed-file's own
+# extension (zst, gz, mbstream, or xbstream) -- it is never renamed to
+# .zst -- since ddev-dbserver's docker-entrypoint.sh dispatches decompression
+# purely by filename (see ddev/ddev#8704): feeding it an uncompressed stream
+# under a .zst name would make it try to zstd-decompress raw data and fail.
 #
 # One multi-arch image tag covers both architectures -- you don't need (and
 # shouldn't make) separate -amd64/-arm64 tags. The seed itself is tied to a
@@ -29,7 +39,9 @@
 #   build-and-push-seeded-image.sh --seed-file=<path> --base-image=<image:tag> --output-image=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--ddev-image-tag=<value>]
 #
 # Every flag accepts either form: --output-image=value or --output-image value.
-# --seed-file supports a leading ~ for $HOME.
+# --seed-file supports a leading ~ for $HOME, and must end in .zst, .gz,
+# .mbstream, or .xbstream -- that extension is preserved into the image
+# unchanged (see above).
 #
 # --ddev-image-tag stamps the com.ddev.image-tag label (see ddev/ddev#8682,
 # which records the tag an image was built as so a derived image's
@@ -151,6 +163,18 @@ if [ ! -f "$SEED_FILE" ]; then
   exit 1
 fi
 
+# ddev-dbserver's docker-entrypoint.sh picks a decompressor purely from the
+# seed file's extension (see ddev/ddev#8704), so the file baked into the
+# image must keep --seed-file's own extension rather than being renamed.
+SEED_EXT="${SEED_FILE##*.}"
+case "$SEED_EXT" in
+  zst|gz|mbstream|xbstream) : ;;
+  *)
+    echo "ERROR: --seed-file must end in .zst, .gz (compressed) or .mbstream, .xbstream (uncompressed, ddev/ddev#8704) -- got: $SEED_FILE" >&2
+    exit 1
+    ;;
+esac
+
 # A persistent docker-container builder (not the default docker-driver
 # builder, which can't push multi-platform manifest lists) is created once
 # and reused -- reused builds get BuildKit's layer cache instead of starting
@@ -160,7 +184,13 @@ if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
   docker buildx create --name "$BUILDER" --driver docker-container
 fi
 
-cp "$SEED_FILE" "${DOCKERFILE_DIR}/base_db.zst"
+# Uncompressed seeds (.mbstream/.xbstream) can be many times larger than a
+# compressed one, so a stray leftover copy here is worth avoiding -- clean up
+# on any exit, not just success.
+cleanup() { rm -f "${DOCKERFILE_DIR}"/base_db.*; }
+trap cleanup EXIT
+
+cp "$SEED_FILE" "${DOCKERFILE_DIR}/base_db.${SEED_EXT}"
 
 if [ -n "$PUSH" ]; then
   echo "Building and pushing multi-platform ($PLATFORMS) image: $OUTPUT_IMAGE (com.ddev.image-tag=${DDEV_IMAGE_TAG})"
@@ -168,6 +198,7 @@ if [ -n "$PUSH" ]; then
     --platform "$PLATFORMS" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
     --build-arg "DDEV_IMAGE_TAG=${DDEV_IMAGE_TAG}" \
+    --build-arg "SEED_EXT=${SEED_EXT}" \
     -t "$OUTPUT_IMAGE" \
     --push \
     "$DOCKERFILE_DIR"
@@ -182,10 +213,9 @@ else
     --platform "$NATIVE_ARCH" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
     --build-arg "DDEV_IMAGE_TAG=${DDEV_IMAGE_TAG}" \
+    --build-arg "SEED_EXT=${SEED_EXT}" \
     -t "$OUTPUT_IMAGE" \
     --load \
     "$DOCKERFILE_DIR"
   echo "Loaded $OUTPUT_IMAGE locally ($NATIVE_ARCH only) -- set dbimage: $OUTPUT_IMAGE in .ddev/config.local.yaml to try it."
 fi
-
-rm -f "${DOCKERFILE_DIR}/base_db.zst"
