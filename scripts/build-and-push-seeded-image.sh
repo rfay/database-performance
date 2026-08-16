@@ -26,38 +26,40 @@
 #   ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8
 #
 # Usage:
-#   build-and-push-seeded-image.sh --seed-file=<path> --base-image=<image:tag> --tag=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--image-tag=<value>]
+#   build-and-push-seeded-image.sh --seed-file=<path> --base-image=<image:tag> --output-image=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--ddev-image-tag=<value>]
 #
-# Every flag accepts either form: --tag=value or --tag value.
+# Every flag accepts either form: --output-image=value or --output-image value.
+# --seed-file supports a leading ~ for $HOME.
 #
-# --image-tag stamps the com.ddev.image-tag label (see ddev/ddev#8682, which
-# records the tag an image was built as so a derived image's provenance
-# survives retagging). Defaults to the tag portion of --base-image, which is
-# correct for a normal seeded build: the seed doesn't change what DDEV
-# generation the image belongs to, so the label should keep saying whatever
-# generation the base image says. Override it to deliberately produce a
-# stale-labeled image, e.g. for testing #8682's mismatch warning:
-#   --image-tag=some-older-generation-tag
+# --ddev-image-tag stamps the com.ddev.image-tag label (see ddev/ddev#8682,
+# which records the tag an image was built as so a derived image's
+# provenance survives retagging). Defaults to the tag portion of
+# --base-image, which is correct for a normal seeded build: the seed doesn't
+# change what DDEV generation the image belongs to, so the label should keep
+# saying whatever generation the base image says. Override it to
+# deliberately produce a stale-labeled image, e.g. for testing #8682's
+# mismatch warning:
+#   --ddev-image-tag=some-older-generation-tag
 #
 # Examples:
 #   # Fast local smoke test (single native arch, loaded into local docker):
 #   build-and-push-seeded-image.sh \
-#     --seed-file=.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
+#     --seed-file=~/.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
 #     --base-image=ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
-#     --tag=ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8
+#     --output-image=ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8
 #
 #   # Real multi-arch push (requires `docker login` to the target registry first):
 #   build-and-push-seeded-image.sh \
-#     --seed-file=.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
+#     --seed-file=~/.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
 #     --base-image=ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
-#     --tag=ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8 \
+#     --output-image=ghcr.io/rfay/ddev-db-seed-d11:medium-100k-nodes-20k-users-mariadb_11.8 \
 #     --push
 #
 #   # Same thing with space-separated flags instead of --flag=value:
 #   build-and-push-seeded-image.sh \
-#     --seed-file /home/coder/workspace/d11/.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
+#     --seed-file ~/workspace/d11/.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
 #     --base-image ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
-#     --tag randyfay/dbserver-100k \
+#     --output-image randyfay/dbserver-100k:latest \
 #     --platforms linux/arm64,linux/amd64 \
 #     --push
 #
@@ -81,11 +83,11 @@ DOCKERFILE_DIR="${SCRIPT_DIR}/../dockerfiles/db-with-seed"
 
 SEED_FILE=""
 BASE_IMAGE=""
-TAG=""
+OUTPUT_IMAGE=""
 PUSH=""
 PLATFORMS="linux/amd64,linux/arm64"
 BUILDER="ddev-db-seed-builder"
-IMAGE_TAG=""
+DDEV_IMAGE_TAG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -93,17 +95,17 @@ while [ $# -gt 0 ]; do
     --seed-file) SEED_FILE="$2"; shift 2 ;;
     --base-image=*) BASE_IMAGE="${1#*=}"; shift ;;
     --base-image) BASE_IMAGE="$2"; shift 2 ;;
-    --tag=*) TAG="${1#*=}"; shift ;;
-    --tag) TAG="$2"; shift 2 ;;
+    --output-image=*) OUTPUT_IMAGE="${1#*=}"; shift ;;
+    --output-image) OUTPUT_IMAGE="$2"; shift 2 ;;
     --platforms=*) PLATFORMS="${1#*=}"; shift ;;
     --platforms) PLATFORMS="$2"; shift 2 ;;
     --builder=*) BUILDER="${1#*=}"; shift ;;
     --builder) BUILDER="$2"; shift 2 ;;
-    --image-tag=*) IMAGE_TAG="${1#*=}"; shift ;;
-    --image-tag) IMAGE_TAG="$2"; shift 2 ;;
+    --ddev-image-tag=*) DDEV_IMAGE_TAG="${1#*=}"; shift ;;
+    --ddev-image-tag) DDEV_IMAGE_TAG="$2"; shift 2 ;;
     --push) PUSH=true; shift ;;
     -h|--help)
-      echo "Usage: $0 --seed-file=<path> --base-image=<image:tag> --tag=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--image-tag=<value>]"
+      echo "Usage: $0 --seed-file=<path> --base-image=<image:tag> --output-image=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--ddev-image-tag=<value>]"
       echo "(--opt=value and --opt value are both accepted.)"
       exit 0
       ;;
@@ -116,14 +118,32 @@ done
 
 : "${SEED_FILE:?--seed-file is required}"
 : "${BASE_IMAGE:?--base-image is required}"
-: "${TAG:?--tag is required, e.g. ghcr.io/youruser/ddev-db-seed-<project>:<tier>-<dbtype>_<dbversion>}"
+: "${OUTPUT_IMAGE:?--output-image is required, e.g. ghcr.io/youruser/ddev-db-seed-<project>:<tier>-<dbtype>_<dbversion>}"
+
+# --seed-file supports a leading ~ for $HOME, since the shell only expands
+# ~ itself when the flag is unquoted and unglobbed on the command line.
+case "$SEED_FILE" in
+  "~"|"~/"*) SEED_FILE="${HOME}${SEED_FILE#\~}" ;;
+esac
+
+# --base-image must be a full image spec (repo:tag), since the com.ddev.image-tag
+# label default below is extracted from its tag portion. Check the final
+# path segment for a ':' so a registry host:port (e.g. localhost:5000/foo)
+# isn't mistaken for a tag.
+case "${BASE_IMAGE##*/}" in
+  *:*) : ;;
+  *)
+    echo "ERROR: --base-image must be a full image spec including a tag, e.g. ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db (got: $BASE_IMAGE)" >&2
+    exit 1
+    ;;
+esac
 
 # Default the com.ddev.image-tag label to BASE_IMAGE's own tag (the part
 # after the last ':') -- a plain seeded build doesn't change what DDEV
 # generation the image belongs to, so the label should say the same
 # generation the base image says.
-if [ -z "$IMAGE_TAG" ]; then
-  IMAGE_TAG="${BASE_IMAGE##*:}"
+if [ -z "$DDEV_IMAGE_TAG" ]; then
+  DDEV_IMAGE_TAG="${BASE_IMAGE##*:}"
 fi
 
 if [ ! -f "$SEED_FILE" ]; then
@@ -143,29 +163,29 @@ fi
 cp "$SEED_FILE" "${DOCKERFILE_DIR}/base_db.zst"
 
 if [ -n "$PUSH" ]; then
-  echo "Building and pushing multi-platform ($PLATFORMS) image: $TAG (com.ddev.image-tag=${IMAGE_TAG})"
+  echo "Building and pushing multi-platform ($PLATFORMS) image: $OUTPUT_IMAGE (com.ddev.image-tag=${DDEV_IMAGE_TAG})"
   docker buildx build --builder "$BUILDER" \
     --platform "$PLATFORMS" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
-    --build-arg "DDEV_IMAGE_TAG=${IMAGE_TAG}" \
-    -t "$TAG" \
+    --build-arg "DDEV_IMAGE_TAG=${DDEV_IMAGE_TAG}" \
+    -t "$OUTPUT_IMAGE" \
     --push \
     "$DOCKERFILE_DIR"
-  echo "Pushed $TAG for $PLATFORMS"
+  echo "Pushed $OUTPUT_IMAGE for $PLATFORMS"
 else
   # --load only works for a single platform (the docker daemon has no
   # concept of a manifest list), so smoke-test with the host's native arch.
   NATIVE_ARCH="linux/$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
-  echo "No --push given: building single-arch ($NATIVE_ARCH) and loading locally for a smoke test: $TAG (com.ddev.image-tag=${IMAGE_TAG})"
+  echo "No --push given: building single-arch ($NATIVE_ARCH) and loading locally for a smoke test: $OUTPUT_IMAGE (com.ddev.image-tag=${DDEV_IMAGE_TAG})"
   echo "(Use --push for the real multi-platform manifest list, once you're ready to publish.)"
   docker buildx build --builder "$BUILDER" \
     --platform "$NATIVE_ARCH" \
     --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
-    --build-arg "DDEV_IMAGE_TAG=${IMAGE_TAG}" \
-    -t "$TAG" \
+    --build-arg "DDEV_IMAGE_TAG=${DDEV_IMAGE_TAG}" \
+    -t "$OUTPUT_IMAGE" \
     --load \
     "$DOCKERFILE_DIR"
-  echo "Loaded $TAG locally ($NATIVE_ARCH only) -- set dbimage: $TAG in .ddev/config.local.yaml to try it."
+  echo "Loaded $OUTPUT_IMAGE locally ($NATIVE_ARCH only) -- set dbimage: $OUTPUT_IMAGE in .ddev/config.local.yaml to try it."
 fi
 
 rm -f "${DOCKERFILE_DIR}/base_db.zst"
