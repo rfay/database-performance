@@ -85,7 +85,16 @@
 #   --ddev-image-tag=some-older-generation-tag
 #
 # Examples:
-#   # Fast local smoke test (single native arch, loaded into local docker):
+#   # Simplest form: resolves --seed-file and --base-image from the d11
+#   # project's own config and .ddev/db_snapshots/ (smoke test, no --push):
+#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed
+#
+#   # Same, explicitly pushed (still required for --push):
+#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed \
+#     --output-image=ghcr.io/rfay/ddev-db-seed-d11:uncompressed-mariadb_11.8 --push
+#
+#   # Fast local smoke test, spelling out --seed-file/--base-image manually
+#   # (single native arch, loaded into local docker):
 #   build-and-push-seeded-image.sh \
 #     --seed-file=~/.ddev/db_snapshots/100k-nodes-20k-users-mariadb_11.8.zst \
 #     --base-image=ddev/ddev-dbserver-mariadb-11.8:20260720_weitzman_zstd_base_db \
@@ -105,14 +114,6 @@
 #     --output-image randyfay/dbserver-100k:latest \
 #     --platforms linux/arm64,linux/amd64 \
 #     --push
-#
-#   # Snapshot-name shortcut: resolves --seed-file and --base-image from the
-#   # d11 project's own config and .ddev/db_snapshots/ (smoke test, no --push):
-#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed
-#
-#   # Same, explicitly pushed (still required for --push):
-#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed \
-#     --output-image=ghcr.io/rfay/ddev-db-seed-d11:uncompressed-mariadb_11.8 --push
 #
 #   # Verify a pushed image really has both platforms (and see the digests):
 #   docker buildx imagetools inspect randyfay/dbserver-100k
