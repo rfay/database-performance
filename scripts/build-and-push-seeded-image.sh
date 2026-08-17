@@ -86,12 +86,16 @@
 #
 # Examples:
 #   # Simplest form: resolves --seed-file and --base-image from the d11
-#   # project's own config and .ddev/db_snapshots/ (smoke test, no --push):
-#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed
-#
-#   # Same, explicitly pushed (still required for --push):
+#   # project's own config and .ddev/db_snapshots/. --output-image has no
+#   # safe default when pushing -- we can't guess a registry/org you can
+#   # push to -- so name it yourself; <registry>/<org>/ddev-db-seed-
+#   # <project>:<snapshot>[-<dbtype>_<dbversion>] is a reasonable pattern:
 #   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed \
 #     --output-image=ghcr.io/rfay/ddev-db-seed-d11:uncompressed-mariadb_11.8 --push
+#
+#   # Same, but a local smoke test only (no --push): --output-image then
+#   # defaults automatically to a local "<project>-db-seed-<snapshot>" tag.
+#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed
 #
 #   # Fast local smoke test, spelling out --seed-file/--base-image manually
 #   # (single native arch, loaded into local docker):
