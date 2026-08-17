@@ -37,11 +37,42 @@
 #
 # Usage:
 #   build-and-push-seeded-image.sh --seed-file=<path> --base-image=<image:tag> --output-image=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--ddev-image-tag=<value>]
+#   build-and-push-seeded-image.sh --snapshot=<short-name> [--project=<path>] [--output-image=<full-tag>] [--push] [...]
 #
 # Every flag accepts either form: --output-image=value or --output-image value.
 # --seed-file supports a leading ~ for $HOME, and must end in .zst, .gz,
 # .mbstream, or .xbstream -- that extension is preserved into the image
 # unchanged (see above).
+#
+# --snapshot=<short-name> is a convenience alternative to --seed-file +
+# --base-image: given a DDEV project (--project, default the current
+# directory -- any subdirectory of the project works, same as any other ddev
+# command) and a snapshot name as shown by `ddev snapshot --list`, it:
+#   - resolves --seed-file to that project's .ddev/db_snapshots/<name>-*
+#     file (whichever compressed/uncompressed extension is actually there);
+#   - resolves --base-image from `ddev describe -j`'s "dbimg" field for that
+#     project, i.e. whatever dbimage the project is *currently* configured to
+#     use -- whether that's DDEV's computed stock default for the project's
+#     db type/version, or an explicit `dbimage:` override. (`ddev version -j`
+#     is NOT used for this: its "db" field is a hardcoded mariadb-only
+#     default that ignores the project's actual db type/version unless
+#     `dbimage:` happens to be explicitly overridden -- verified against
+#     ddev/ddev's pkg/version/version.go and confirmed empirically: a
+#     project configured for mariadb:10.4 still reported a mariadb-11.8
+#     image. `ddev describe -j`'s "dbimg", by contrast, calls the same
+#     app.GetDBImage() ddev itself uses, so it's correct either way.)
+#   - if the resolved --base-image doesn't look like a stock
+#     ddev/ddev-dbserver-<type>-<version> image, prints a warning: it's
+#     likely already a derived/seeded image from an earlier build (exactly
+#     the mistake this flag exists to prevent), so building from it again
+#     would stack seeds. Pass --base-image explicitly to confirm or correct.
+#   - without --push, defaults --output-image to a local
+#     "<project>-db-seed-<snapshot>:<dbtype>_<dbversion>" tag if you don't
+#     give one; --push always requires an explicit --output-image, since
+#     there's no registry to safely guess.
+# --seed-file/--base-image, if also given explicitly, override the
+# corresponding --snapshot-derived value (--seed-file and --snapshot
+# together is an error -- pick one).
 #
 # --ddev-image-tag stamps the com.ddev.image-tag label (see ddev/ddev#8682,
 # which records the tag an image was built as so a derived image's
@@ -75,6 +106,14 @@
 #     --platforms linux/arm64,linux/amd64 \
 #     --push
 #
+#   # Snapshot-name shortcut: resolves --seed-file and --base-image from the
+#   # d11 project's own config and .ddev/db_snapshots/ (smoke test, no --push):
+#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed
+#
+#   # Same, explicitly pushed (still required for --push):
+#   build-and-push-seeded-image.sh --project=~/workspace/d11 --snapshot=uncompressed \
+#     --output-image=ghcr.io/rfay/ddev-db-seed-d11:uncompressed-mariadb_11.8 --push
+#
 #   # Verify a pushed image really has both platforms (and see the digests):
 #   docker buildx imagetools inspect randyfay/dbserver-100k
 #
@@ -100,6 +139,8 @@ PUSH=""
 PLATFORMS="linux/amd64,linux/arm64"
 BUILDER="ddev-db-seed-builder"
 DDEV_IMAGE_TAG=""
+PROJECT="."
+SNAPSHOT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -115,9 +156,14 @@ while [ $# -gt 0 ]; do
     --builder) BUILDER="$2"; shift 2 ;;
     --ddev-image-tag=*) DDEV_IMAGE_TAG="${1#*=}"; shift ;;
     --ddev-image-tag) DDEV_IMAGE_TAG="$2"; shift 2 ;;
+    --project=*) PROJECT="${1#*=}"; shift ;;
+    --project) PROJECT="$2"; shift 2 ;;
+    --snapshot=*) SNAPSHOT="${1#*=}"; shift ;;
+    --snapshot) SNAPSHOT="$2"; shift 2 ;;
     --push) PUSH=true; shift ;;
     -h|--help)
       echo "Usage: $0 --seed-file=<path> --base-image=<image:tag> --output-image=<full-tag> [--push] [--platforms=linux/amd64,linux/arm64] [--builder=<name>] [--ddev-image-tag=<value>]"
+      echo "   or: $0 --snapshot=<short-name> [--project=<path>] [--output-image=<full-tag>] [--push] [...]"
       echo "(--opt=value and --opt value are both accepted.)"
       exit 0
       ;;
@@ -127,6 +173,97 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ -n "$SNAPSHOT" ]; then
+  if [ -n "$SEED_FILE" ]; then
+    echo "ERROR: --snapshot and --seed-file are mutually exclusive -- pick one" >&2
+    exit 1
+  fi
+  for tool in ddev jq; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: --snapshot requires '$tool' on PATH" >&2; exit 1; }
+  done
+
+  # ddev describe/version subcommands only accept a registered project NAME,
+  # not an arbitrary path -- so cd into --project and let ddev's own
+  # upward directory search (same as any other ddev command) find it,
+  # rather than passing --project through as a positional argument.
+  case "$PROJECT" in
+    "~"|"~/"*) PROJECT="${HOME}${PROJECT#\~}" ;;
+  esac
+  if ! DESCRIBE_JSON="$(cd "$PROJECT" && ddev describe -j 2>&1)"; then
+    echo "ERROR: 'ddev describe' failed for --project=$PROJECT:" >&2
+    echo "$DESCRIBE_JSON" >&2
+    exit 1
+  fi
+
+  PROJECT_NAME="$(jq -r '.raw.name' <<<"$DESCRIBE_JSON")"
+  PROJECT_APPROOT="$(jq -r '.raw.approot' <<<"$DESCRIBE_JSON")"
+  DB_TYPE="$(jq -r '.raw.database_type' <<<"$DESCRIBE_JSON")"
+  DB_VERSION="$(jq -r '.raw.database_version' <<<"$DESCRIBE_JSON")"
+  PROJECT_DBIMG="$(jq -r '.raw.dbimg' <<<"$DESCRIBE_JSON")"
+
+  # This whole baked-in-seed technique is mariabackup/xtrabackup-stream based
+  # (see ddev/ddev#8704) -- postgres uses pg_basebackup/tar instead and isn't
+  # supported by dockerfiles/db-with-seed's Dockerfile.
+  if [ "$DB_TYPE" = "postgres" ]; then
+    echo "ERROR: --snapshot doesn't support postgres projects (project '$PROJECT_NAME' is $DB_TYPE) -- this seeding technique is mariadb/mysql-only" >&2
+    exit 1
+  fi
+
+  if [ -z "$BASE_IMAGE" ]; then
+    BASE_IMAGE="$PROJECT_DBIMG"
+    echo "Using base image from project '$PROJECT_NAME': $BASE_IMAGE"
+    # A stock dbimage always looks like ddev/ddev-dbserver-<type>-<version>:<tag>.
+    # Anything else is either a hand-picked dbimage: override or -- easy
+    # mistake to make -- an image from a PREVIOUS seeded build, in which case
+    # building from it again would stack seeds on top of each other.
+    case "$BASE_IMAGE" in
+      ddev/ddev-dbserver-"${DB_TYPE}"-"${DB_VERSION}":*) : ;;
+      *)
+        echo "WARNING: '$BASE_IMAGE' doesn't look like a stock ddev-dbserver image for ${DB_TYPE} ${DB_VERSION}." >&2
+        echo "  It may be a custom dbimage: override, and/or already have a seed baked in from an earlier build." >&2
+        echo "  Pass --base-image explicitly if this isn't the image you want to build from." >&2
+        ;;
+    esac
+  fi
+
+  if [ -z "$SEED_FILE" ]; then
+    SNAPSHOT_DIR="${PROJECT_APPROOT}/.ddev/db_snapshots"
+    shopt -s nullglob
+    candidates=("${SNAPSHOT_DIR}/${SNAPSHOT}-"*)
+    shopt -u nullglob
+    matches=()
+    for candidate in "${candidates[@]}"; do
+      case "$candidate" in
+        *.zst|*.gz|*.mbstream|*.xbstream) matches+=("$candidate") ;;
+      esac
+    done
+    case "${#matches[@]}" in
+      0)
+        echo "ERROR: no snapshot named '$SNAPSHOT' found in $SNAPSHOT_DIR" >&2
+        echo "Available snapshots for '$PROJECT_NAME':" >&2
+        (cd "$PROJECT" && ddev snapshot --list) >&2 || true
+        exit 1
+        ;;
+      1) SEED_FILE="${matches[0]}" ;;
+      *)
+        echo "ERROR: multiple files match snapshot '$SNAPSHOT' in $SNAPSHOT_DIR:" >&2
+        printf '  %s\n' "${matches[@]}" >&2
+        exit 1
+        ;;
+    esac
+    echo "Using seed file from snapshot '$SNAPSHOT': $SEED_FILE"
+  fi
+
+  if [ -z "$OUTPUT_IMAGE" ]; then
+    if [ -n "$PUSH" ]; then
+      echo "ERROR: --output-image is required with --push -- there's no registry to safely default to" >&2
+      exit 1
+    fi
+    OUTPUT_IMAGE="${PROJECT_NAME}-db-seed-${SNAPSHOT}:${DB_TYPE}_${DB_VERSION}"
+    echo "Defaulting --output-image to local tag: $OUTPUT_IMAGE"
+  fi
+fi
 
 : "${SEED_FILE:?--seed-file is required}"
 : "${BASE_IMAGE:?--base-image is required}"
