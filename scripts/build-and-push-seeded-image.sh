@@ -234,15 +234,17 @@ if [ -n "$SNAPSHOT" ]; then
 
   if [ -z "$SEED_FILE" ]; then
     SNAPSHOT_DIR="${PROJECT_APPROOT}/.ddev/db_snapshots"
-    shopt -s nullglob
-    candidates=("${SNAPSHOT_DIR}/${SNAPSHOT}-"*)
-    shopt -u nullglob
     matches=()
-    for candidate in "${candidates[@]}"; do
+    # Glob directly in the for loop rather than via an intermediate array --
+    # macOS's system /bin/bash (3.2) treats a zero-element array expansion
+    # as an unbound variable under `set -u`, even with nullglob.
+    shopt -s nullglob
+    for candidate in "${SNAPSHOT_DIR}/${SNAPSHOT}-"*; do
       case "$candidate" in
         *.zst|*.gz|*.mbstream|*.xbstream) matches+=("$candidate") ;;
       esac
     done
+    shopt -u nullglob
     case "${#matches[@]}" in
       0)
         echo "ERROR: no snapshot named '$SNAPSHOT' found in $SNAPSHOT_DIR" >&2
