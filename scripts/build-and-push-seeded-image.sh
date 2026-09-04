@@ -134,7 +134,20 @@
 
 set -eu -o pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve through symlinks (e.g. a `~/bin/build-and-push-seeded-image.sh` ->
+# repo symlink) so DOCKERFILE_DIR points at the real repo, not the symlink's
+# own directory. `readlink -f` isn't portable to macOS's BSD readlink, so
+# walk the links by hand.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in
+    /*) : ;;
+    *) SOURCE="${SOURCE_DIR}/${SOURCE}" ;;
+  esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 DOCKERFILE_DIR="${SCRIPT_DIR}/../dockerfiles/db-with-seed"
 
 SEED_FILE=""
